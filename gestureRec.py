@@ -4,6 +4,8 @@ import numpy as np
 import mediapipe as mp
 import tensorflow as tf
 from keras.models import load_model
+from time import sleep
+
 
 # initialize mediapipe
 mpHands = mp.solutions.hands
@@ -22,6 +24,44 @@ print(classNames)
 
 # Initialize the webcam
 cap = cv2.VideoCapture(0)
+
+rectangles = []
+#initialize rectangles
+while(1):
+    _, frame = cap.read()
+
+    x, y, c = frame.shape
+    # Flip the frame vertically
+    frame = cv2.flip(frame, 1)
+    framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # Convert the frame to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Threshold the image to get black regions
+    _, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
+
+    # Find contours in the thresholded image
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Filter contours based on area to remove small noise
+    contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 500]
+    rectangles.clear()
+
+    # Iterate over the contours
+    for cnt in contours:
+        # Approximate the contour to a polygon
+        epsilon = 0.02 * cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+        # If the polygon has 4 vertices, it is a rectangle
+        if len(approx) == 4:
+            rectangles.append(approx)
+
+    cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
+    
+    cv2.imshow("Preview", frame)
+    if cv2.waitKey(1) == ord('q'):
+        break
 
 while True:
     # Read each frame from the webcam
@@ -70,8 +110,21 @@ while True:
 
                 # Print finger tip position
                 print(f"{finger} Tip Position: ({finger_tip_x}, {finger_tip_y})")
+            
+            # Iterate over the contours
+            for approx in rectangles:
+                
+                cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
+                for finger in fingers:
+                    finger_tip = handslms.landmark[getattr(mpHands.HandLandmark, f'{finger}_TIP')]
+                    finger_tip_x = int(finger_tip.x * x)
+                    finger_tip_y = int(finger_tip.y * y)
 
-            # Print index finger tip position
+                    # Check if the point is inside the rectangle
+                    inside = cv2.pointPolygonTest(approx, (finger_tip_x, finger_tip_y), False) >= 0
+
+                    print(f"{finger} Tip Inside Rectangle: {inside}")
+
 
     # show the prediction on the frame
     cv2.putText(frame, className, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 
