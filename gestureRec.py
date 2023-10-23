@@ -19,45 +19,41 @@ model = load_model('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452
 f = open('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\hand-gesture-recognition-code\\gesture.names', 'r')
 classNames = f.read().split('\n')
 f.close()
-print(classNames)
+#print(classNames)
 
 
 # Initialize the webcam
 cap = cv2.VideoCapture(0)
 
 rectangles = []
+keys = []
 #initialize rectangles
 while(1):
     _, frame = cap.read()
-
-    x, y, c = frame.shape
-    # Flip the frame vertically
-    frame = cv2.flip(frame, 1)
-    framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    # Convert the frame to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # Threshold the image to get black regions
     _, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
+    cv2.imshow("Binary", thresh)
+    # Perform morphological operations to remove small noise
+    kernel = np.ones((5,5),np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-    # Find contours in the thresholded image
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Find connected components in the thresholded image
+    num_labels, labels = cv2.connectedComponents(thresh)
 
-    # Filter contours based on area to remove small noise
-    contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 500]
-    rectangles.clear()
+    # Initialize an empty list to store the keys
+    keys = []
 
-    # Iterate over the contours
-    for cnt in contours:
-        # Approximate the contour to a polygon
-        epsilon = 0.02 * cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, epsilon, True)
+    # Iterate over the connected components (skip the background)
+    for i in range(1, num_labels):
+        # Get the bounding rectangle for each component
+        x, y, w, h = cv2.boundingRect((labels == i).astype(np.uint8))
+        if(w >= 40 and h >= 40):
+            # Store the rectangle as a key
+            keys.append((x, y, w, h))
 
-        # If the polygon has 4 vertices, it is a rectangle
-        if len(approx) == 4:
-            rectangles.append(approx)
-
-    cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
+            # Draw the rectangle on the frame for preview
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
     
     cv2.imshow("Preview", frame)
     if cv2.waitKey(1) == ord('q'):
@@ -65,9 +61,10 @@ while(1):
 
 while True:
     # Read each frame from the webcam
+    #sleep(1)
     _, frame = cap.read()
 
-    x, y, c = frame.shape
+    height, width, c = frame.shape
 
     # Flip the frame vertically
     frame = cv2.flip(frame, 1)
@@ -80,55 +77,39 @@ while True:
     
     className = ''
 
+    for key in keys:
+        xKey, yKey, wKey, hKey = key
+        cv2.rectangle(frame, (xKey, yKey), (xKey + wKey, yKey + hKey), (0, 255, 0), 2)
+
     # post process the result
     if result.multi_hand_landmarks:
         landmarks = []
+            
         for handslms in result.multi_hand_landmarks:
             for lm in handslms.landmark:
                 # print(id, lm)
-                lmx = int(lm.x * x)
-                lmy = int(lm.y * y)
+                lmx = int(lm.x * width)
+                lmy = int(lm.y * height)
 
                 landmarks.append([lmx, lmy])
 
             # Drawing landmarks on frames
             mpDraw.draw_landmarks(frame, handslms, mpHands.HAND_CONNECTIONS)
 
-            # Predict gesture
-            prediction = model.predict([landmarks])
-            # print(prediction)
-            classID = np.argmax(prediction)
-            className = classNames[classID]
+            index_finger_tip = handslms.landmark[mpHands.HandLandmark.INDEX_FINGER_TIP]
+            index_finger_tip_x = int(index_finger_tip.x * width)
+            index_finger_tip_y = int(index_finger_tip.y * height)
+            # draw a box around the finger tip
+            cv2.rectangle(frame, (index_finger_tip_x - 5, index_finger_tip_y - 5), (index_finger_tip_x + 5, index_finger_tip_y + 5), (0, 0, 225), 2)
 
-            # Get index finger tip landmark
-            # Get finger tip landmarks
-            fingers = ['THUMB', 'INDEX_FINGER', 'MIDDLE_FINGER', 'RING_FINGER', 'PINKY']
-            for finger in fingers:
-                finger_tip = handslms.landmark[getattr(mpHands.HandLandmark, f'{finger}_TIP')]
-                finger_tip_x = int(finger_tip.x * x)
-                finger_tip_y = int(finger_tip.y * y)
+            #print(f"Index Finger Tip Position: ({index_finger_tip_x}, {index_finger_tip_y})")
 
-                # Print finger tip position
-                print(f"{finger} Tip Position: ({finger_tip_x}, {finger_tip_y})")
-            
-            # Iterate over the contours
-            for approx in rectangles:
-                
-                cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
-                for finger in fingers:
-                    finger_tip = handslms.landmark[getattr(mpHands.HandLandmark, f'{finger}_TIP')]
-                    finger_tip_x = int(finger_tip.x * x)
-                    finger_tip_y = int(finger_tip.y * y)
-
-                    # Check if the point is inside the rectangle
-                    inside = cv2.pointPolygonTest(approx, (finger_tip_x, finger_tip_y), False) >= 0
-
-                    print(f"{finger} Tip Inside Rectangle: {inside}")
-
-
-    # show the prediction on the frame
-    cv2.putText(frame, className, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 
-                   1, (0,0,255), 2, cv2.LINE_AA)
+            for i, (xKey, yKey, wKey, hKey) in enumerate(keys):
+                inside = xKey <= index_finger_tip_x <= xKey + wKey and yKey <= index_finger_tip_y <= yKey + hKey
+                #print(f"Checking Key {i} at {xKey}, {yKey}, {wKey}, {hKey}")
+                if inside:
+                    print(f"INSIDE Key {i}")
+                    
 
     # Show the final output
     cv2.imshow("Output", frame) 
