@@ -19,7 +19,8 @@ rectangles = []
 keys = []
 #initialize rectangles
 while(1):
-    _, frame = cap.read()
+    #_, frame = cap.read()
+    frame = cv2.imread('<filepath here>')
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
     #cv2.imshow("Binary", thresh)
