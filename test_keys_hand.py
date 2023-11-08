@@ -5,6 +5,7 @@ import mediapipe as mp
 import tensorflow as tf
 from keras.models import load_model
 from time import sleep
+import matplotlib.pyplot as plt
 
 
 # initialize mediapipe
@@ -20,25 +21,39 @@ keys = []
 #initialize rectangles
 while(1):
     _, frame = cap.read()
+    #frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keys.jpg')
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
-    #cv2.imshow("Binary", thresh)
-    # Convert the image to grayscale
-    #gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    """# Threshold the image to get only the paper
-    _, paper_mask = cv2.threshold(gray, 180, 127, cv2.THRESH_BINARY)
-
-    # Bitwise-and the mask with the original image
-    paper_only = cv2.bitwise_and(frame, frame, mask=paper_mask)
-    cv2.imshow("paper only", paper_only)
-    # Convert the paper-only image to grayscale
-    gray_paper = cv2.cvtColor(paper_only, cv2.COLOR_BGR2GRAY)
-
-    # Threshold the grayscale image to get only the keys
-    _, thresh = cv2.threshold(gray_paper, 70, 255, cv2.THRESH_BINARY_INV)
+    cv2.imshow("Gray", gray)
+    cv2.imshow("Binary", thresh)
+    #plt.imshow(gray)
+    #plt.show()
     """
-    
+    # Find contours in the binary image
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Initialize an empty list for the black rectangles
+    black_rectangles = []
+    #filter small noise
+    contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 500]
+
+    for cnt in contours:
+        # Approximate the contour to a polygon
+        epsilon = 0.01 * cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+        # Check if the polygon is a rectangle
+        if len(approx) == 4:
+            # Get the bounding rectangle of the contour
+            x, y, w, h = cv2.boundingRect(cnt)
+
+            # Check if the center of the rectangle is black
+            center_value = thresh[y + h // 2, x + w // 2]
+            if center_value == 255:
+                # Add the rectangle to the list
+                black_rectangles.append((x, y, w, h))
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2) 
+    """
     #find contours
     contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     #filter small noise
@@ -52,27 +67,48 @@ while(1):
     #reset keys
     keys = []
 
+    """
+    b_mean = cv2.bilateralFilter(thresh,9,75,75)
+    blackContours, _ = cv2.findContours(b_mean, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    #filter small noise
+    blackContours = [cnt for cnt in blackContours if cv2.contourArea(cnt) > 500]
+    cv2.imshow("Bilatteral", b_mean)
+    black_keys = []
+    for cnt in blackContours:
+        # Approximate the contour to a polygon
+        epsilon = 0.01 * cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+        # Check if the polygon is a rectangle
+        if len(approx) == 4:
+            # Get the bounding rectangle of the contour
+            x, y, w, h = cv2.boundingRect(cnt)
+
+            # Add the rectangle to the list
+            black_keys.append((x, y, w, h))
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2) 
+    """
     # Iterate over each contour
     for i, cnt in enumerate(contours):
         # Approximate the contour to a polygon
         epsilon = 0.01 * cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, epsilon, True)
         keys.append(approx)
-        # Draw the polygon on the frame for preview
-        cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
-        #M = cv2.moments(cnt)
-        #cX = int(M["m10"] / M["m00"])
-        #cY = int(M["m01"] / M["m00"])
-        #cv2.putText(frame, str(i+1), (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
     
     #Now also find the black keys
     # Find contours in the thresholded image
+    #use diff thresh
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
+    cv2.imshow("BlackKeyBinary", thresh)
+
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     # Filter contours based on area to remove small noise
     contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 500]
+
+    for approx in keys:
+        #draw the white keys
+        cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
 
     # Iterate over the contours
     for cnt in contours:
@@ -85,7 +121,8 @@ while(1):
 
         # Draw the polygon on the frame for preview
         cv2.drawContours(frame, [approx], -1, (255, 0, 0), 2)
-
+    
+        
     cv2.imshow("Preview", frame)
     if cv2.waitKey(1) == ord('q'):
         break
@@ -117,14 +154,19 @@ while True:
     # Get hand landmark prediction
     result = hands.process(framergb)
 
-    # print(result)
-    
-    className = ''
-
     for key in keys:
         cv2.drawContours(frame, [key], -1, (0, 255, 0), 2)
         #xKey, yKey, wKey, hKey = key
         #cv2.rectangle(frame, (xKey, yKey), (xKey + wKey, yKey + hKey), (0, 255, 0), 2)
+
+    for i, key in enumerate(keys):
+        # Calculate the centroid of the key
+        M = cv2.moments(key)
+        cX = int(M["m10"] / M["m00"])
+        cY = int(M["m01"] / M["m00"])
+
+        # Write the index of the key on the image
+        cv2.putText(frame, str(i), (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
     # post process the result
     if result.multi_hand_landmarks:
@@ -147,7 +189,7 @@ while True:
             # draw a box around the finger tip
             cv2.rectangle(frame, (index_finger_tip_x - 10, index_finger_tip_y - 10), (index_finger_tip_x + 10, index_finger_tip_y + 10), (0, 0, 225), 2)
 
-            #print(f"Index Finger Tip Position: ({index_finger_tip_x}, {index_finger_tip_y})")
+            #print(f"Index Finger Tip Position: ({index_finger_tip_x}, {index_finger_tip_y}, {index_finger_tip.z})")
             for i, key in enumerate(keys):
                 # Use cv2.pointPolygonTest to check if the index finger tip is inside the key
                 inside = cv2.pointPolygonTest(key, (index_finger_tip_x, index_finger_tip_y), False) >= 0
