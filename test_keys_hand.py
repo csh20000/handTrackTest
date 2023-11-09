@@ -5,6 +5,7 @@ import mediapipe as mp
 import tensorflow as tf
 from keras.models import load_model
 from time import sleep
+from statistics import mode
 
 
 # initialize mediapipe
@@ -18,15 +19,111 @@ cap = cv2.VideoCapture(0)
 rectangles = []
 keys = []
 #initialize rectangles
-while(1):
-    #_, frame = cap.read()
-    frame = cv2.imread('<filepath here>')
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
-    #cv2.imshow("Binary", thresh)
-    # Convert the image to grayscale
-    #gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+while(1):
+    _, frame = cap.read()
+    #frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keysImg.jpg')
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    #_, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
+    blur = cv2.GaussianBlur(gray,(5,5),0)
+    _, thresh = cv2.threshold(blur,125,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+
+    cv2.imshow("Binary", thresh)
+
+
+    #dilation to connect the black rectangles with the outer black rectangle
+    kernel = np.ones((5,5),np.uint8)
+    dilated = cv2.dilate(thresh, kernel, iterations = 2)
+
+    cv2.imshow("Dialated", dilated)
+
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    largest_rectangle = None
+    largest_area = 0
+
+    for cnt in contours:
+        # Approximate the contour to a polygon
+        epsilon = 0.02 * cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+        # Check if the polygon is a rectangle
+        if len(approx) == 4:
+            area = cv2.contourArea(cnt)
+
+            #update the largest rectangle
+            if area > largest_area:
+                largest_rectangle = cnt
+                largest_area = area
+    # Draw the largest rectangle on the frame
+    if largest_rectangle is not None:
+        cv2.drawContours(frame, [largest_rectangle], -1, (0, 255, 0), 2)
+
+    #----------------Find solid black rectangles (black keys)---------------------
+    # Use morphological operations to remove the lines
+    kernel = np.ones((7,7),np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+
+    contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    #filter contours based on area
+    contours = [cnt for cnt in contours if (cv2.contourArea(cnt) > 500 and cv2.contourArea(cnt) < 10000)]
+    contours.sort(key=cv2.contourArea, reverse=True)
+
+    areas = [cv2.contourArea(cnt) for cnt in contours]
+    most_common_area = 0
+    if(areas):
+        most_common_area = mode(areas)
+
+    #filter contours based on most common area (should be just the black keys remaining)
+    contours = [cnt for cnt in contours if 0.7 * most_common_area <= cv2.contourArea(cnt) <= 1.3 * most_common_area]
+
+
+    for cnt in contours:
+        # Approximate the contour to a polygon
+        epsilon = 0.02 * cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+        #approximately a rectangle
+        if len(approx) == 4:
+             # Get the bounding rectangle of the contour
+            x, y, w, h = cv2.boundingRect(cnt)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+
+            # Check the aspect ratio of the bounding rectangle
+            aspect_ratio = float(w)/h
+            #if 0.6 <= aspect_ratio <= 0.15:
+            #    # Store the polygon as a key
+            #    keys.append(approx)
+            #
+            #    #cv2.drawContours(frame, [approx], -1, (255, 0, 0), 2)
+            #    cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+
+    # The other contours are the potential rectangles
+    """potential_rectangles = contours[1:]
+
+    for potential_rectangle in potential_rectangles:
+        # Approximate the contour to a polygon
+        epsilon = 0.02 * cv2.arcLength(potential_rectangle, True)
+        approx = cv2.approxPolyDP(potential_rectangle, epsilon, True)
+
+        # Check if the polygon is a rectangle
+        if len(approx) == 4:
+            # Get the bounding rectangle of the contour
+            x, y, w, h = cv2.boundingRect(potential_rectangle)
+
+            # Check if the average of 5 pixels around the center of the rectangle is white
+            center_values = []
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    center_values.append(thresh[y + h // 2 + dy, x + w // 2 + dx])
+            if np.mean(center_values) <= 60:
+                # Draw the rectangle on the frame
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+    """
+                
     """# Threshold the image to get only the paper
     _, paper_mask = cv2.threshold(gray, 180, 127, cv2.THRESH_BINARY)
 
@@ -38,7 +135,7 @@ while(1):
 
     # Threshold the grayscale image to get only the keys
     _, thresh = cv2.threshold(gray_paper, 70, 255, cv2.THRESH_BINARY_INV)
-    """
+    
     
     #find contours
     contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -86,8 +183,11 @@ while(1):
 
         # Draw the polygon on the frame for preview
         cv2.drawContours(frame, [approx], -1, (255, 0, 0), 2)
+    """
 
     cv2.imshow("Preview", frame)
+    
+    #input("Press any key to continue...")
     if cv2.waitKey(1) == ord('q'):
         break
 
