@@ -6,6 +6,7 @@ import tensorflow as tf
 from keras.models import load_model
 from time import sleep
 from statistics import mode
+import matplotlib.pyplot as plt
 
 
 # initialize mediapipe
@@ -21,16 +22,17 @@ keys = []
 #initialize rectangles
 
 while(1):
-    _, frame = cap.read()
-    #frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keysImg.jpg')
+    #_, frame = cap.read()
+    frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keysImg.jpg')
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     #_, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
     blur = cv2.GaussianBlur(gray,(5,5),0)
-    _, thresh = cv2.threshold(blur,125,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+    _, thresh = cv2.threshold(blur,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
 
     cv2.imshow("Binary", thresh)
 
 
+    ##------------------finding the outer border largest rectangle----------
     #dilation to connect the black rectangles with the outer black rectangle
     kernel = np.ones((5,5),np.uint8)
     dilated = cv2.dilate(thresh, kernel, iterations = 2)
@@ -55,51 +57,152 @@ while(1):
             if area > largest_area:
                 largest_rectangle = cnt
                 largest_area = area
+
     # Draw the largest rectangle on the frame
     if largest_rectangle is not None:
         cv2.drawContours(frame, [largest_rectangle], -1, (0, 255, 0), 2)
 
-    #----------------Find solid black rectangles (black keys)---------------------
-    # Use morphological operations to remove the lines
-    kernel = np.ones((7,7),np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+        """epsilon = 0.02 * cv2.arcLength(largest_rectangle, True)
+        borderApprox = cv2.approxPolyDP(largest_rectangle, epsilon, True)
+        corners = borderApprox.reshape(-1, 2)
+        print(corners)
+        plt.imshow(thresh)
 
-    contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # Assign the corners to variables
+        bottom_right, top_right, top_left, bottom_left = corners
 
-    #filter contours based on area
-    contours = [cnt for cnt in contours if (cv2.contourArea(cnt) > 500 and cv2.contourArea(cnt) < 10000)]
-    contours.sort(key=cv2.contourArea, reverse=True)
+        x, y, w, h = cv2.boundingRect(largest_rectangle)
 
-    areas = [cv2.contourArea(cnt) for cnt in contours]
-    most_common_area = 0
-    if(areas):
-        most_common_area = mode(areas)
+        # Compute the perspective transform matrix
+        src_pts = np.float32([top_left, top_right, bottom_right, bottom_left])
+        dst_pts = np.float32([[0, 0], [w-1, 0], [w-1, h-1], [0, h-1]])
+        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        warped = cv2.warpPerspective(thresh, M, (w, h))
+        cv2.imshow("Warped", warped)
+        warpCopy = warped
 
-    #filter contours based on most common area (should be just the black keys remaining)
-    contours = [cnt for cnt in contours if 0.7 * most_common_area <= cv2.contourArea(cnt) <= 1.3 * most_common_area]
+        """# Compute the perspective transform matrix
+        rect = cv2.minAreaRect(largest_rectangle)
+        box = cv2.boxPoints(rect)
+        box = np.int0(box)
 
+        width = int(rect[1][0])
+        height = int(rect[1][1])
 
-    for cnt in contours:
-        # Approximate the contour to a polygon
-        epsilon = 0.02 * cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, epsilon, True)
+        # Ensure the longer side of the rectangle is horizontal
+        if width < height:
+            width, height = height, width
+            src_pts = np.array([[box[1]], [box[2]], [box[3]], [box[0]]], dtype="float32")
+        else:
+            src_pts = box.astype("float32")
 
-        #approximately a rectangle
-        if len(approx) == 4:
-             # Get the bounding rectangle of the contour
-            x, y, w, h = cv2.boundingRect(cnt)
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        #src_pts = box.astype("float32")
+        dst_pts = np.array([[0, height-1],
+                            [0, 0],
+                            [width-1, 0],
+                            [width-1, height-1]], dtype="float32")
+        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        warped = cv2.warpPerspective(thresh, M, (width, height))
+        cv2.imshow("Warped", warped)
+        warpCopy = warped
+        #"""
 
+        #----------------Find solid black rectangles (black keys)---------------------
+        inv_M = cv2.getPerspectiveTransform(dst_pts, src_pts)
 
-            # Check the aspect ratio of the bounding rectangle
-            aspect_ratio = float(w)/h
-            #if 0.6 <= aspect_ratio <= 0.15:
-            #    # Store the polygon as a key
-            #    keys.append(approx)
-            #
-            #    #cv2.drawContours(frame, [approx], -1, (255, 0, 0), 2)
-            #    cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        # Use morphological operations to remove the lines
+        kernel = np.ones((7,7),np.uint8)
+        thresh = cv2.morphologyEx(warped, cv2.MORPH_OPEN, kernel)
 
+        contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        #filter contours based on area
+        contours = [cnt for cnt in contours if (cv2.contourArea(cnt) > 500 and cv2.contourArea(cnt) < 10000)]
+        contours.sort(key=cv2.contourArea, reverse=True)
+
+        areas = [cv2.contourArea(cnt) for cnt in contours]
+        most_common_area = 0
+        if(areas):
+            most_common_area = mode(areas)
+
+        #filter contours based on most common area (should be just the black keys remaining)
+        contours = [cnt for cnt in contours if 0.7 * most_common_area <= cv2.contourArea(cnt) <= 1.3 * most_common_area]
+
+        keys = []
+        black_keys = [] #these are warped
+        for cnt in contours:
+            # Approximate the contour to a polygon
+            epsilon = 0.02 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+            #keys.append(approx)
+            #approximately a rectangle
+            if len(approx) == 4:
+                # Get the bounding rectangle of the contour
+                x, y, w, h = cv2.boundingRect(cnt)
+                cv2.rectangle(warpCopy, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                rect = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]], dtype="float32")
+                #inv_M = cv2.getPerspectiveTransform(dst_pts, src_pts) define this above
+                inv_rect = cv2.perspectiveTransform(rect.reshape(-1,1,2), inv_M)
+                inv_rect = inv_rect.astype(int)
+
+                keys.append(inv_rect)
+                black_keys.append([x,y,w,h])
+
+                # Draw the rectangle on the original frame
+                cv2.polylines(frame, [inv_rect], True, (255, 0, 0), 2)
+
+                # Check the aspect ratio of the bounding rectangle
+                aspect_ratio = float(w)/h
+                #if 0.6 <= aspect_ratio <= 0.15:
+                #    # Store the polygon as a key
+                #    keys.append(approx)
+                #
+                #    #cv2.drawContours(frame, [approx], -1, (255, 0, 0), 2)
+                #    cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+            
+        cv2.imshow("Warp copy", warpCopy)
+
+        ##-----------------find white keys-----------------
+        num_polygons = 14 #CHANGE THIS VAL LATER, INFER FROM NUM OF BLACK KEYS
+        polygons = []
+        #split border into polygons (white keys)
+        for i in range(num_polygons):
+            x1 = i * width // num_polygons
+            x2 = (i + 1) * width // num_polygons
+            polygon = np.array([[x1, 0], [x2, 0], [x2, height-1], [x1, height-1]], dtype="int")
+            polygons.append(polygon)
+
+        #create mask to fill the smaller rectangles (black keys)
+        mask = np.zeros_like(warpCopy)
+        for curr_key in black_keys:
+            # Get the bounding rectangle of the contour
+            x, y, w, h = curr_key#cv2.boundingRect(cnt)
+            # Fill the rectangle on the mask
+            cv2.rectangle(mask, (x, y), (x + w, y + h), (255, 255, 255), -1)
+
+        #subtract smaller rectangles from larger polygons (white - black)
+        for polygon in polygons:
+            poly_mask = np.zeros_like(warpCopy)
+            cv2.fillPoly(poly_mask, [polygon], (255, 255, 255))
+            poly_mask = cv2.subtract(poly_mask, mask)
+
+            # Find contours in the polygon mask
+            poly_contours, _ = cv2.findContours(poly_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Approximate the contours to polygons and add them to keys
+            for cnt in poly_contours:
+                epsilon = 0.02 * cv2.arcLength(cnt, True)
+                approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+                transformed_approx = cv2.perspectiveTransform(approx.reshape(-1,1,2).astype('float32'), inv_M)
+                # Reshape back to original shape and convert to int
+                transformed_approx = transformed_approx.reshape(-1,1,2).astype(int)
+
+                keys.append(transformed_approx)
+                cv2.drawContours(frame, [transformed_approx],  -1, (0, 0, 255), 2)
+        
 
     # The other contours are the potential rectangles
     """potential_rectangles = contours[1:]
@@ -122,8 +225,7 @@ while(1):
             if np.mean(center_values) <= 60:
                 # Draw the rectangle on the frame
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-    """
-                
+    """         
     """# Threshold the image to get only the paper
     _, paper_mask = cv2.threshold(gray, 180, 127, cv2.THRESH_BINARY)
 
@@ -193,7 +295,7 @@ while(1):
 
     
 # Calculate the x-coordinates of the centroids of the keys
-x_centroids = [np.mean(key[:, :, 0]) for key in keys]
+x_centroids = [np.mean(key[:, 0, 0]).tolist() for key in keys]
 # Create a list of tuples where each tuple is (x_centroid, key)
 keys_with_x_centroids = list(zip(x_centroids, keys))
 # Sort the list of tuples by the x-coordinate of the centroid
