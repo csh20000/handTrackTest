@@ -22,8 +22,8 @@ keys = []
 #initialize rectangles
 
 while(1):
-    #_, frame = cap.read()
-    frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keysImg.jpg')
+    _, frame = cap.read()
+    #frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keys.jpg')
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     #_, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
     blur = cv2.GaussianBlur(gray,(5,5),0)
@@ -43,6 +43,7 @@ while(1):
     
     largest_rectangle = None
     largest_area = 0
+    largest_approx = None
 
     for cnt in contours:
         # Approximate the contour to a polygon
@@ -57,55 +58,38 @@ while(1):
             if area > largest_area:
                 largest_rectangle = cnt
                 largest_area = area
+                largest_approx = approx
 
     # Draw the largest rectangle on the frame
     if largest_rectangle is not None:
         cv2.drawContours(frame, [largest_rectangle], -1, (0, 255, 0), 2)
 
-        """epsilon = 0.02 * cv2.arcLength(largest_rectangle, True)
-        borderApprox = cv2.approxPolyDP(largest_rectangle, epsilon, True)
-        corners = borderApprox.reshape(-1, 2)
+
+        corners = largest_approx.reshape(-1, 2)
         print(corners)
         plt.imshow(thresh)
 
-        # Assign the corners to variables
-        bottom_right, top_right, top_left, bottom_left = corners
+        # Sort corners based on the sum of x and y
+        corners = sorted(corners, key=lambda corner: corner[0] + corner[1])
 
-        x, y, w, h = cv2.boundingRect(largest_rectangle)
+        # Assign corners based on the sum of x and y
+        top_left, _ , _, bottom_right = corners
+
+        # Assign the remaining corners based on y value
+        if corners[1][1] < corners[2][1]:
+            top_right, bottom_left = corners[1], corners[2]
+        else:
+            top_right, bottom_left = corners[2], corners[1]
+
+        _, _, border_w, border_h = cv2.boundingRect(largest_rectangle)
 
         # Compute the perspective transform matrix
         src_pts = np.float32([top_left, top_right, bottom_right, bottom_left])
-        dst_pts = np.float32([[0, 0], [w-1, 0], [w-1, h-1], [0, h-1]])
+        dst_pts = np.float32([[0, 0], [border_w-1, 0], [border_w-1, border_h-1], [0, border_h-1]])
         M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-        warped = cv2.warpPerspective(thresh, M, (w, h))
+        warped = cv2.warpPerspective(thresh, M, (border_w, border_h))
         cv2.imshow("Warped", warped)
         warpCopy = warped
-
-        """# Compute the perspective transform matrix
-        rect = cv2.minAreaRect(largest_rectangle)
-        box = cv2.boxPoints(rect)
-        box = np.int0(box)
-
-        width = int(rect[1][0])
-        height = int(rect[1][1])
-
-        # Ensure the longer side of the rectangle is horizontal
-        if width < height:
-            width, height = height, width
-            src_pts = np.array([[box[1]], [box[2]], [box[3]], [box[0]]], dtype="float32")
-        else:
-            src_pts = box.astype("float32")
-
-        #src_pts = box.astype("float32")
-        dst_pts = np.array([[0, height-1],
-                            [0, 0],
-                            [width-1, 0],
-                            [width-1, height-1]], dtype="float32")
-        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-        warped = cv2.warpPerspective(thresh, M, (width, height))
-        cv2.imshow("Warped", warped)
-        warpCopy = warped
-        #"""
 
         #----------------Find solid black rectangles (black keys)---------------------
         inv_M = cv2.getPerspectiveTransform(dst_pts, src_pts)
@@ -164,14 +148,15 @@ while(1):
             
         cv2.imshow("Warp copy", warpCopy)
 
+        
         ##-----------------find white keys-----------------
         num_polygons = 14 #CHANGE THIS VAL LATER, INFER FROM NUM OF BLACK KEYS
         polygons = []
         #split border into polygons (white keys)
         for i in range(num_polygons):
-            x1 = i * width // num_polygons
-            x2 = (i + 1) * width // num_polygons
-            polygon = np.array([[x1, 0], [x2, 0], [x2, height-1], [x1, height-1]], dtype="int")
+            x1 = i * border_w // num_polygons
+            x2 = (i + 1) * border_w // num_polygons
+            polygon = np.array([[x1, 0], [x2, 0], [x2, border_h-1], [x1, border_h-1]], dtype="int")
             polygons.append(polygon)
 
         #create mask to fill the smaller rectangles (black keys)
@@ -193,7 +178,7 @@ while(1):
 
             # Approximate the contours to polygons and add them to keys
             for cnt in poly_contours:
-                epsilon = 0.02 * cv2.arcLength(cnt, True)
+                epsilon = 0.01 * cv2.arcLength(cnt, True)
                 approx = cv2.approxPolyDP(cnt, epsilon, True)
 
                 transformed_approx = cv2.perspectiveTransform(approx.reshape(-1,1,2).astype('float32'), inv_M)
@@ -203,89 +188,6 @@ while(1):
                 keys.append(transformed_approx)
                 cv2.drawContours(frame, [transformed_approx],  -1, (0, 0, 255), 2)
         
-
-    # The other contours are the potential rectangles
-    """potential_rectangles = contours[1:]
-
-    for potential_rectangle in potential_rectangles:
-        # Approximate the contour to a polygon
-        epsilon = 0.02 * cv2.arcLength(potential_rectangle, True)
-        approx = cv2.approxPolyDP(potential_rectangle, epsilon, True)
-
-        # Check if the polygon is a rectangle
-        if len(approx) == 4:
-            # Get the bounding rectangle of the contour
-            x, y, w, h = cv2.boundingRect(potential_rectangle)
-
-            # Check if the average of 5 pixels around the center of the rectangle is white
-            center_values = []
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-                    center_values.append(thresh[y + h // 2 + dy, x + w // 2 + dx])
-            if np.mean(center_values) <= 60:
-                # Draw the rectangle on the frame
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-    """         
-    """# Threshold the image to get only the paper
-    _, paper_mask = cv2.threshold(gray, 180, 127, cv2.THRESH_BINARY)
-
-    # Bitwise-and the mask with the original image
-    paper_only = cv2.bitwise_and(frame, frame, mask=paper_mask)
-    cv2.imshow("paper only", paper_only)
-    # Convert the paper-only image to grayscale
-    gray_paper = cv2.cvtColor(paper_only, cv2.COLOR_BGR2GRAY)
-
-    # Threshold the grayscale image to get only the keys
-    _, thresh = cv2.threshold(gray_paper, 70, 255, cv2.THRESH_BINARY_INV)
-    
-    
-    #find contours
-    contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    #filter small noise
-    contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 500]
-    #remove largest contour, removes outline of keys
-    areas = [cv2.contourArea(cnt) for cnt in contours]
-    if areas: #only delete if nonempty
-        largest_contour_index = np.argmax(areas)
-        del contours[largest_contour_index]
-
-    #reset keys
-    keys = []
-
-    # Iterate over each contour
-    for i, cnt in enumerate(contours):
-        # Approximate the contour to a polygon
-        epsilon = 0.01 * cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, epsilon, True)
-        keys.append(approx)
-        # Draw the polygon on the frame for preview
-        cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
-        #M = cv2.moments(cnt)
-        #cX = int(M["m10"] / M["m00"])
-        #cY = int(M["m01"] / M["m00"])
-        #cv2.putText(frame, str(i+1), (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-    
-    #Now also find the black keys
-    # Find contours in the thresholded image
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    # Filter contours based on area to remove small noise
-    contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 500]
-
-    # Iterate over the contours
-    for cnt in contours:
-        # Approximate the contour to a polygon
-        epsilon = 0.01 * cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, epsilon, True)
-
-        # Store the polygon as a key
-        keys.append(approx)
-
-        # Draw the polygon on the frame for preview
-        cv2.drawContours(frame, [approx], -1, (255, 0, 0), 2)
-    """
 
     cv2.imshow("Preview", frame)
     
