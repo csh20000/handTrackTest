@@ -25,10 +25,16 @@ while(1):
     _, frame = cap.read()
     #frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keys.jpg')
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    #GLOBAL THRESH
     #_, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
-    blur = cv2.GaussianBlur(gray,(5,5),0)
-    _, thresh = cv2.threshold(blur,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+    
+    # Contrast enhancement
+    equ = cv2.equalizeHist(gray)
+    #blur = cv2.GaussianBlur(equ,(5,5),0)
+    blur = cv2.bilateralFilter(equ,9,75,75)
 
+    #OTSU THRESH
+    _, thresh = cv2.threshold(blur,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
     cv2.imshow("Binary", thresh)
 
 
