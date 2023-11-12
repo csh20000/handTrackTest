@@ -7,6 +7,7 @@ from keras.models import load_model
 from time import sleep
 from statistics import mode
 import matplotlib.pyplot as plt
+from collections import deque
 
 
 # initialize mediapipe
@@ -23,18 +24,20 @@ keys = []
 
 while(1):
     _, frame = cap.read()
-    #frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keys.jpg')
+    #frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keysImg.jpg')
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     #GLOBAL THRESH
     #_, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
     
     # Contrast enhancement
     equ = cv2.equalizeHist(gray)
-    #blur = cv2.GaussianBlur(equ,(5,5),0)
-    blur = cv2.bilateralFilter(equ,9,75,75)
+    blur = cv2.GaussianBlur(equ,(5,5),0)
+    #blur = cv2.bilateralFilter(equ,9,75,75)
 
     #OTSU THRESH
-    _, thresh = cv2.threshold(blur,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+    _, thresh  = cv2.threshold(blur,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+    #bias = 1.5
+    #_, thresh = cv2.threshold(blur, otsuthresh * bias, 255, cv2.THRESH_BINARY_INV)
     cv2.imshow("Binary", thresh)
 
 
@@ -102,48 +105,52 @@ while(1):
 
         # Use morphological operations to remove the lines
         kernel = np.ones((7,7),np.uint8)
-        thresh = cv2.morphologyEx(warped, cv2.MORPH_OPEN, kernel)
+        blackThresh = cv2.morphologyEx(warped, cv2.MORPH_OPEN, kernel)
 
-        contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.imshow("BlackKeyThresh", blackThresh)
+
+        #cv2.findContours(blackThresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+        contours, _ = cv2.findContours(blackThresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         #filter contours based on area
-        contours = [cnt for cnt in contours if (cv2.contourArea(cnt) > 500 and cv2.contourArea(cnt) < 10000)]
-        contours.sort(key=cv2.contourArea, reverse=True)
+        contours = [cnt for cnt in contours if (cv2.contourArea(cnt) > 500)] #and cv2.contourArea(cnt) < 10000)]
+        #contours.sort(key=cv2.contourArea, reverse=True)
 
-        areas = [cv2.contourArea(cnt) for cnt in contours]
+        """areas = [cv2.contourArea(cnt) for cnt in contours]
         most_common_area = 0
         if(areas):
             most_common_area = mode(areas)
 
         #filter contours based on most common area (should be just the black keys remaining)
         contours = [cnt for cnt in contours if 0.7 * most_common_area <= cv2.contourArea(cnt) <= 1.3 * most_common_area]
-
+        """
         keys = []
         black_keys = [] #these are warped
         for cnt in contours:
             # Approximate the contour to a polygon
-            epsilon = 0.02 * cv2.arcLength(cnt, True)
+            epsilon = 0.01 * cv2.arcLength(cnt, True)
             approx = cv2.approxPolyDP(cnt, epsilon, True)
 
-            #keys.append(approx)
+            cv2.drawContours(frame, [approx],  -1, (0, 255, 255), 2)
+
             #approximately a rectangle
-            if len(approx) == 4:
-                # Get the bounding rectangle of the contour
-                x, y, w, h = cv2.boundingRect(cnt)
-                cv2.rectangle(warpCopy, (x, y), (x + w, y + h), (255, 0, 0), 2)
-                rect = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]], dtype="float32")
-                #inv_M = cv2.getPerspectiveTransform(dst_pts, src_pts) define this above
-                inv_rect = cv2.perspectiveTransform(rect.reshape(-1,1,2), inv_M)
-                inv_rect = inv_rect.astype(int)
+            #if len(approx) == 4:
+            # Get the bounding rectangle of the contour
+            x, y, w, h = cv2.boundingRect(cnt)
+            cv2.rectangle(warpCopy, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            rect = np.array([[x, y], [x+w, y], [x+w, y+h], [x, y+h]], dtype="float32")
+            #inv_M = cv2.getPerspectiveTransform(dst_pts, src_pts) define this above
+            inv_rect = cv2.perspectiveTransform(rect.reshape(-1,1,2), inv_M)
+            inv_rect = inv_rect.astype(int)
 
-                keys.append(inv_rect)
-                black_keys.append([x,y,w,h])
+            keys.append(inv_rect)
+            black_keys.append([x,y,w,h])
 
-                # Draw the rectangle on the original frame
-                cv2.polylines(frame, [inv_rect], True, (255, 0, 0), 2)
+            # Draw the rectangle on the original frame
+            cv2.polylines(frame, [inv_rect], True, (255, 0, 0), 2)
 
                 # Check the aspect ratio of the bounding rectangle
-                aspect_ratio = float(w)/h
+                #aspect_ratio = float(w)/h
                 #if 0.6 <= aspect_ratio <= 0.15:
                 #    # Store the polygon as a key
                 #    keys.append(approx)
@@ -193,7 +200,6 @@ while(1):
 
                 keys.append(transformed_approx)
                 cv2.drawContours(frame, [transformed_approx],  -1, (0, 0, 255), 2)
-        
 
     cv2.imshow("Preview", frame)
     
@@ -213,9 +219,18 @@ keys[:] = [key for x_centroid, key in keys_with_x_centroids]
 
 
 
+z_diffs = deque(maxlen=100)
+y_diffs = deque(maxlen=100)
+
+# Initialize the plot
+plt.ion()
+fig, ax = plt.subplots()
+line1, = ax.plot(z_diffs, color='blue')
+line2, = ax.plot(y_diffs, color='red')
+previous_y = None
+
 while True:
     # Read each frame from the webcam
-    #sleep(1)
     _, frame = cap.read()
 
     height, width, c = frame.shape
@@ -252,13 +267,33 @@ while True:
             # Drawing landmarks on frames
             mpDraw.draw_landmarks(frame, handslms, mpHands.HAND_CONNECTIONS)
 
+            wrist = handslms.landmark[mpHands.HandLandmark.WRIST]
+
             index_finger_tip = handslms.landmark[mpHands.HandLandmark.INDEX_FINGER_TIP]
             index_finger_tip_x = int(index_finger_tip.x * width)
             index_finger_tip_y = int(index_finger_tip.y * height)
+
             # draw a box around the finger tip
             cv2.rectangle(frame, (index_finger_tip_x - 10, index_finger_tip_y - 10), (index_finger_tip_x + 10, index_finger_tip_y + 10), (0, 0, 225), 2)
 
-            #print(f"Index Finger Tip Position: ({index_finger_tip_x}, {index_finger_tip_y})")
+            z_diff = index_finger_tip.z - wrist.z  # or index_finger_mcp_z
+            y_diff = index_finger_tip.y - previous_y if previous_y is not None else 0
+
+            # Append the differences to the deques
+            z_diffs.append(z_diff)
+            y_diffs.append(y_diff)
+
+            # Update the plot
+            line1.set_ydata(z_diffs)
+            line1.set_xdata(range(len(z_diffs)))
+            line2.set_ydata(y_diffs)
+            line2.set_xdata(range(len(y_diffs)))
+            ax.relim()
+            ax.autoscale_view()
+            plt.draw()
+            plt.pause(0.01)
+            previous_y = index_finger_tip.y
+            print(f"Finger, wrist, diff: ({round(index_finger_tip.z, 5)}, {round(wrist.z, 5)}, {round(wrist.z - index_finger_tip.z, 5)}")
             for i, key in enumerate(keys):
                 # Use cv2.pointPolygonTest to check if the index finger tip is inside the key
                 inside = cv2.pointPolygonTest(key, (index_finger_tip_x, index_finger_tip_y), False) >= 0
@@ -266,8 +301,8 @@ while True:
             #for i, (xKey, yKey, wKey, hKey) in enumerate(keys):
                 #inside = xKey <= index_finger_tip_x <= xKey + wKey and yKey <= index_finger_tip_y <= yKey + hKey
                 #print(f"Checking Key {i} at {xKey}, {yKey}, {wKey}, {hKey}")
-                if inside:
-                    print(f"INSIDE Key {i}")
+                #if inside:
+                #    print(f"INSIDE Key {i}")
                     
 
     # Show the final output
