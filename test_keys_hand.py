@@ -42,24 +42,12 @@ while(1):
 
     # Contrast enhancement
     equ = cv2.equalizeHist(gray)
-    #blur = cv2.GaussianBlur(equ,(5,5),0)
     blur = cv2.bilateralFilter(equ,9,75,75)
 
-    #OTSU THRESH
-    #_, thresh  = cv2.threshold(blur,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
 
     #GLOBAL THRESH
     _, thresh = cv2.threshold(gray, thold_val, 255, cv2.THRESH_BINARY_INV)
-    #thresh = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, \
-    #                                  cv2.THRESH_BINARY,15,2)
-
-    #bias = 1.5
-    #_, thresh = cv2.threshold(blur, otsuthresh * bias, 255, cv2.THRESH_BINARY_INV)
     cv2.imshow("Binary", thresh)
-    #plt.imshow(blur)
-    #plt.show()
-    #plt.imshow(gray)
-    #plt.show()
 
 
     ##------------------finding the outer border largest rectangle----------
@@ -138,19 +126,10 @@ while(1):
         contours, _ = cv2.findContours(blackThresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         #filter contours based on area
-        contours = [cnt for cnt in contours if (cv2.contourArea(cnt) > 500)] #and cv2.contourArea(cnt) < 10000)]
-        #contours.sort(key=cv2.contourArea, reverse=True)
-
-        """areas = [cv2.contourArea(cnt) for cnt in contours]
-        most_common_area = 0
-        if(areas):
-            most_common_area = mode(areas)
-
-        #filter contours based on most common area (should be just the black keys remaining)
-        contours = [cnt for cnt in contours if 0.7 * most_common_area <= cv2.contourArea(cnt) <= 1.3 * most_common_area]
-        """
+        contours = [cnt for cnt in contours if (cv2.contourArea(cnt) > 500)]
         keys = []
         black_keys = [] #these are warped
+
         for cnt in contours:
             # Approximate the contour to a polygon
             epsilon = 0.01 * cv2.arcLength(cnt, True)
@@ -158,8 +137,6 @@ while(1):
 
             cv2.drawContours(frame, [approx],  -1, (0, 255, 255), 2)
 
-            #approximately a rectangle
-            #if len(approx) == 4:
             # Get the bounding rectangle of the contour
             x, y, w, h = cv2.boundingRect(cnt)
             cv2.rectangle(warpCopy, (x, y), (x + w, y + h), (255, 0, 0), 2)
@@ -174,25 +151,17 @@ while(1):
             # Draw the rectangle on the original frame
             cv2.polylines(frame, [inv_rect], True, (255, 0, 0), 2)
 
-                # Check the aspect ratio of the bounding rectangle
-                #aspect_ratio = float(w)/h
-                #if 0.6 <= aspect_ratio <= 0.15:
-                #    # Store the polygon as a key
-                #    keys.append(approx)
-                #
-                #    #cv2.drawContours(frame, [approx], -1, (255, 0, 0), 2)
-                #    cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-
             
         cv2.imshow("Warp copy", warpCopy)
 
         
         ##-----------------find white keys-----------------
+        #value to not pass calibration if black keys not a multiple of 5
         valid_black_keys = False
         if len(black_keys) % 5 == 0:
             valid_black_keys = True
 
-        num_polygons = 7*len(black_keys)//5 #CHANGE THIS VAL LATER, INFER FROM NUM OF BLACK KEYS
+        num_polygons = 7*len(black_keys)//5 #7 white keys per 5 black keys
         polygons = []
         #split border into polygons (white keys)
         for i in range(num_polygons):
@@ -205,7 +174,7 @@ while(1):
         mask = np.zeros_like(warpCopy)
         for curr_key in black_keys:
             # Get the bounding rectangle of the contour
-            x, y, w, h = curr_key#cv2.boundingRect(cnt)
+            x, y, w, h = curr_key
             # Fill the rectangle on the mask
             cv2.rectangle(mask, (x, y), (x + w, y + h), (255, 255, 255), -1)
 
