@@ -22,23 +22,44 @@ rectangles = []
 keys = []
 #initialize rectangles
 
+#----Threshold slider-----
+thold_val = 100 #threshold for key border key border
+tWind = 'TrackBar Window'
+cv2.namedWindow(tWind)
+
+def onThresh(val):
+    global thold_val
+    thold_val = val
+
+cv2.createTrackbar('Thresh', tWind, thold_val, 255, onThresh)
+#-------------------------
+
+
 while(1):
     _, frame = cap.read()
     #frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\testHand\\keysImg.jpg')
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    #GLOBAL THRESH
-    #_, thresh = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY_INV)
-    
+
     # Contrast enhancement
     equ = cv2.equalizeHist(gray)
-    blur = cv2.GaussianBlur(equ,(5,5),0)
-    #blur = cv2.bilateralFilter(equ,9,75,75)
+    #blur = cv2.GaussianBlur(equ,(5,5),0)
+    blur = cv2.bilateralFilter(equ,9,75,75)
 
     #OTSU THRESH
-    _, thresh  = cv2.threshold(blur,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+    #_, thresh  = cv2.threshold(blur,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+
+    #GLOBAL THRESH
+    _, thresh = cv2.threshold(gray, thold_val, 255, cv2.THRESH_BINARY_INV)
+    #thresh = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, \
+    #                                  cv2.THRESH_BINARY,15,2)
+
     #bias = 1.5
     #_, thresh = cv2.threshold(blur, otsuthresh * bias, 255, cv2.THRESH_BINARY_INV)
     cv2.imshow("Binary", thresh)
+    #plt.imshow(blur)
+    #plt.show()
+    #plt.imshow(gray)
+    #plt.show()
 
 
     ##------------------finding the outer border largest rectangle----------
@@ -56,7 +77,7 @@ while(1):
 
     for cnt in contours:
         # Approximate the contour to a polygon
-        epsilon = 0.02 * cv2.arcLength(cnt, True)
+        epsilon = 0.01 * cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, epsilon, True)
 
         # Check if the polygon is a rectangle
@@ -76,7 +97,6 @@ while(1):
 
         corners = largest_approx.reshape(-1, 2)
         print(corners)
-        plt.imshow(thresh)
 
         # Sort corners based on the sum of x and y
         corners = sorted(corners, key=lambda corner: corner[0] + corner[1])
@@ -91,6 +111,11 @@ while(1):
             top_right, bottom_left = corners[2], corners[1]
 
         _, _, border_w, border_h = cv2.boundingRect(largest_rectangle)
+
+        top_left = [top_left[0] + 5, top_left[1] + 5]
+        bottom_left = [bottom_left[0] + 5, bottom_left[1] - 5]
+        top_right = [top_right[0] - 5, top_right[1] + 5]
+        bottom_right = [bottom_right[0] - 5, bottom_right[1] - 5]
 
         # Compute the perspective transform matrix
         src_pts = np.float32([top_left, top_right, bottom_right, bottom_left])
@@ -163,7 +188,11 @@ while(1):
 
         
         ##-----------------find white keys-----------------
-        num_polygons = 14 #CHANGE THIS VAL LATER, INFER FROM NUM OF BLACK KEYS
+        valid_black_keys = False
+        if len(black_keys) % 5 == 0:
+            valid_black_keys = True
+
+        num_polygons = 7*len(black_keys)//5 #CHANGE THIS VAL LATER, INFER FROM NUM OF BLACK KEYS
         polygons = []
         #split border into polygons (white keys)
         for i in range(num_polygons):
@@ -204,7 +233,7 @@ while(1):
     cv2.imshow("Preview", frame)
     
     #input("Press any key to continue...")
-    if cv2.waitKey(1) == ord('q'):
+    if cv2.waitKey(1) == ord('q') and valid_black_keys:
         break
 
     
