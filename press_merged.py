@@ -1,7 +1,3 @@
-
-
-
-# import necessary packages
 #import cv2
 import numpy as np
 #import mediapipe as mp
@@ -11,11 +7,10 @@ from time import sleep
 from statistics import mode
 import matplotlib.pyplot as plt
 from collections import deque
-#from picamera2 import Picamera2, Preview
-#import serial
+from picamera2 import Picamera2, Preview
+import serial
 
-
-"""sleep(1)
+sleep(1)
 
 arduino = serial.Serial(port='/dev/ttyACM0', baudrate=38400, timeout=3) 
 
@@ -23,9 +18,9 @@ def write_read(x):
     arduino.write(bytes(x, 'utf-8'))
     data = arduino.readline()
     return data 
-"""
+
 # Initialize the webcam
-"""picam = Picamera2()
+picam = Picamera2()
 
 config = picam.create_preview_configuration()
 picam.configure(config)
@@ -38,13 +33,12 @@ preview_config = picam.create_preview_configuration(main={"size": (640, 480),"fo
 
 picam.configure(preview_config)
 picam.start()
-"""
+
 import mediapipe as mp
 import tensorflow as tf
 import cv2
 
 
-cap = cv2.VideoCapture(0)
 # initialize mediapipe
 mpHands = mp.solutions.hands
 hands = mpHands.Hands(max_num_hands=1, min_detection_confidence=0.7)
@@ -74,8 +68,7 @@ def onThresh(val):
 cv2.createTrackbar('Size', tWind, kernel_size_bk, 30, onThresh)
 
 while(1):
-    #_, frame = cap.read()
-    frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\virtual piano\\keys.jpg')
+    frame = picam.capture_array("main")
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -276,11 +269,8 @@ finger_tips = {}
 finger_types = ['thumb', 'index', 'middle', 'ring', 'pinky']
 #********************************************
 
-import time
 while True:
-    start_time = time.time()
-    # Read each frame from the webcam
-    _, frame = cap.read()#picam.capture_array("main")
+    frame = picam.capture_array("main")
 
     #-----------------BEGIN INTERNAL EDITS-----------------------
     height, width, c = frame.shape
@@ -301,7 +291,6 @@ while True:
     if result.multi_hand_landmarks:
         landmarks = []
 
-            
         for handslms in result.multi_hand_landmarks:
             for lm in handslms.landmark:
                 # print(id, lm)
@@ -310,7 +299,6 @@ while True:
 
                 landmarks.append([lmx, lmy])
 
-            
             # Get the landmarks for the tips of each finger
             finger_tips = {
                 'thumb': (int(handslms.landmark[mpHands.HandLandmark.THUMB_TIP].x * width), int(handslms.landmark[mpHands.HandLandmark.THUMB_TIP].y * height)),
@@ -324,55 +312,6 @@ while True:
             mpDraw.draw_landmarks(frame, handslms, mpHands.HAND_CONNECTIONS)
 
             #----------------------------------------------------
-            #----------------Whole hand (palm) movement------------------
-            """
-             # Get the landmark for the palm base
-            palm_base_landmark = handslms.landmark[mpHands.HandLandmark.WRIST]
-            palm_base_position = int(palm_base_landmark.y * height)  # Get the y-coordinate of the palm base
-
-            # Add the current position to the list of past positions
-            last_positions['palm_base'].append(palm_base_position)
-
-            # If we have more past positions than the size of the smoothing window, remove the oldest one
-            if len(last_positions['palm_base']) > smoothing_window_size:
-                last_positions['palm_base'].pop(0)
-
-            if len(last_positions['palm_base']) > 1:
-                palm_base_movement_rate = (last_positions['palm_base'][-1] - last_positions['palm_base'][0]) / (len(last_positions['palm_base']) - 1)
-            else:
-                palm_base_movement_rate = 0
-
-            if palm_base_movement_rate > (movement_rate_threshold/2):
-                #print("whole hand")
-                # Calculate the relative positions of the fingertips to the palm base
-                relative_positions = {finger: int(landmark.y * height) - palm_base_position for finger, landmark in finger_tips.items()}
-
-                # Find the two highest fingers
-                highest_fingers = sorted(relative_positions, key=relative_positions.get)[:2]
-
-                # Calculate the average position of the two highest fingers
-                average_highest_position = sum(relative_positions[finger] for finger in highest_fingers) / 2
-
-                # Find the lowest finger
-                lowest_finger = sorted(relative_positions, key=relative_positions.get, reverse=True)[0]
-
-                for finger, landmark in finger_tips.items():
-                    # If the finger is closer to the average highest position, it's not pressing a key
-                    if abs(relative_positions[finger] - average_highest_position) < abs(relative_positions[finger] - relative_positions[lowest_finger]):
-                        is_pressing[finger] = False
-                    else:
-                        # If the whole hand is moving downwards and the finger is over a key, start pressing key
-                        if palm_base_movement_rate > movement_rate_threshold: # and cv2.pointPolygonTest(keys[i], (int(landmark.x * width), current_position), False) >= 0:
-                            is_pressing[finger] = True
-
-                        # If the finger is currently pressing a key
-                        elif is_pressing[finger]:
-                            # If the whole hand is moving upwards, stop pressing key
-                            if palm_base_movement_rate < -movement_rate_threshold:
-                                is_pressing[finger] = False
-                        """
-            #else: #else consider fingers individually
-
 
             key_write_arr = np.array([0,0,0,0,0])
             #--------------individual finger tracking-------------
@@ -408,101 +347,12 @@ while True:
                             finger_inside = cv2.pointPolygonTest(key, finger_tips[finger_name], False) >= 0
                             if finger_inside and is_pressing[finger_name]:
                                 key_write_arr[finger_index] = i+72
-                # for t, key in enumerate(keys):
-                #     # Use cv2.pointPolygonTest to check if the index finger tip is inside the key
-                #     thumb_inside = cv2.pointPolygonTest(key, finger_tips['thumb'], False) >= 0
-            
-                #     if thumb_inside and is_pressing['thumb']:
-                #         #print(f"Thumb Inside Key {t}")
-                #         thumb_key_conversion = t+72
-                #         key_write_arr[0] = thumb_key_conversion
-                    
-                # for i, key in enumerate(keys):
-                #     index_inside = cv2.pointPolygonTest(key, finger_tips['index'], False) >= 0
-                    
-                #     if index_inside and is_pressing['index']:
-                #         index_key_conversion = i+72
-                #         key_write_arr[1] = index_key_conversion
-                    
-                
-                # for m, key in enumerate(keys):
-                #     middle_inside = cv2.pointPolygonTest(key, finger_tips['middle'], False) >= 0
-                    
-                #     if middle_inside and is_pressing['middle']: 
-                #         middle_key_conversion = m+72
-                #         key_write_arr[2] = middle_key_conversion
-
-                # for r, key in enumerate(keys):
-                #     ring_inside = cv2.pointPolygonTest(key, finger_tips['ring'], False) >= 0
-                    
-                #     if ring_inside and is_pressing['ring']:
-                #         ring_key_conversion = r+72
-                #         key_write_arr[3] = ring_key_conversion
-                        
-                # for p, key in enumerate(keys):
-                #     pinky_inside = cv2.pointPolygonTest(key, finger_tips['pinky'], False) >= 0
-                    
-                #     if pinky_inside and is_pressing['pinky']:
-                #         pinky_key_conversion = p+72
-                #         key_write_arr[4] = pinky_key_conversion
-
             else:
                 for i, key in enumerate(keys):
                         for finger_index, finger_name in enumerate(finger_types):
                             finger_inside = cv2.pointPolygonTest(key, finger_tips[finger_name], False) >= 0
                             if finger_inside:
                                 key_write_arr[finger_index] = i+72
-                # for t, key in enumerate(keys):
-                #     # Use cv2.pointPolygonTest to check if the index finger tip is inside the key
-                #     thumb_inside = cv2.pointPolygonTest(key, finger_tips['thumb'], False) >= 0
-            
-                #     if thumb_inside:
-                #         #print(f"Thumb Inside Key {t}")
-                #         thumb_key_conversion = t+72
-                #         key_write_arr[0] = thumb_key_conversion
-                #         #print("Thumb Note: ")
-                #         #print(thumb_key_conversion)
-                    
-                # for i, key in enumerate(keys):
-                #     index_inside = cv2.pointPolygonTest(key, finger_tips['index'], False) >= 0
-                    
-                #     if index_inside:
-                #         #print(f"Index Inside Key {i}")
-                #         index_key_conversion = i+72
-                #         key_write_arr[1] = index_key_conversion
-                #         #print("Index Note: ")
-                #         #print(index_key_conversion)
-                    
-                
-                # for m, key in enumerate(keys):
-                #     middle_inside = cv2.pointPolygonTest(key, finger_tips['middle'], False) >= 0
-                    
-                #     if middle_inside: 
-                #         #print(f"Middle Inside Key {m}")
-                #         middle_key_conversion = m+72
-                #         key_write_arr[2] = middle_key_conversion
-                #         #print("Middle Note: ")
-                #         #print(middle_key_conversion
-                # for r, key in enumerate(keys):
-                #     ring_inside = cv2.pointPolygonTest(key, finger_tips['ring'], False) >= 0
-                    
-                #     if ring_inside:
-                #         #print(f"Ring Inside Key {r}")
-                #         ring_key_conversion = r+72
-                #         key_write_arr[3] = ring_key_conversion
-                #         #print("Ring Note: ")
-                #         #print(ring_key_conversion)
-                        
-                        
-                # for p, key in enumerate(keys):
-                #     pinky_inside = cv2.pointPolygonTest(key, finger_tips['pinky'], False) >= 0
-                    
-                #     if pinky_inside:
-                #         #print(f"Pinky Inside Key {i}")
-                #         pinky_key_conversion = p+72
-                #         key_write_arr[4] = pinky_key_conversion
-                #         #print("Pinky Note: ")
-                #         #print( pinky_key_conversion)
             
             #-------------------------END EDITS-----------------------------
 
@@ -512,8 +362,8 @@ while True:
 
             key_write_string = str(key_write_arr[0]) + 'n' + str(key_write_arr[1]) + 'n' + str(key_write_arr[2]) + 'n' + str(key_write_arr[3]) + 'n' + str(key_write_arr[4]) + 'n'+ '0n0n0n0n0n' + 'A'
             print(key_write_string)
-            #val = write_read(key_write_string)
-            #print("Received Value: ",val)
+            val = write_read(key_write_string)
+            print("Received Value: ",val)
                     
 
     # Show the final output
@@ -526,10 +376,6 @@ while True:
     elif command_key == ord('t'):
         use_press = not use_press
     #---------------------------------------
-    
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f"{elapsed_time}")
 
 
 cv2.destroyAllWindows()
