@@ -1,4 +1,4 @@
-#import cv2
+# import necessary packages
 import numpy as np
 #import mediapipe as mp
 #import tensorflow as tf
@@ -7,10 +7,11 @@ from time import sleep
 from statistics import mode
 import matplotlib.pyplot as plt
 from collections import deque
-from picamera2 import Picamera2, Preview
-import serial
+#from picamera2 import Picamera2, Preview
+#import serial
 
-sleep(1)
+
+"""sleep(1)
 
 arduino = serial.Serial(port='/dev/ttyACM0', baudrate=38400, timeout=3) 
 
@@ -18,9 +19,9 @@ def write_read(x):
     arduino.write(bytes(x, 'utf-8'))
     data = arduino.readline()
     return data 
-
+"""
 # Initialize the webcam
-picam = Picamera2()
+"""picam = Picamera2()
 
 config = picam.create_preview_configuration()
 picam.configure(config)
@@ -33,12 +34,13 @@ preview_config = picam.create_preview_configuration(main={"size": (640, 480),"fo
 
 picam.configure(preview_config)
 picam.start()
-
+"""
 import mediapipe as mp
 import tensorflow as tf
 import cv2
 
 
+cap = cv2.VideoCapture(0)
 # initialize mediapipe
 mpHands = mp.solutions.hands
 hands = mpHands.Hands(max_num_hands=1, min_detection_confidence=0.7)
@@ -68,7 +70,8 @@ def onThresh(val):
 cv2.createTrackbar('Size', tWind, kernel_size_bk, 30, onThresh)
 
 while(1):
-    frame = picam.capture_array("main")
+    #_, frame = cap.read()
+    frame = cv2.imread('C:\\Users\\cshu\\Documents\\shool_work\\2023-2024\\sem1\\452\\project\\virtual piano\\keys.jpg')
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -237,7 +240,6 @@ while(1):
     if cv2.waitKey(1) == ord('q') and valid_black_keys:
         break
 
-    
 # Calculate the x-coordinates of the centroids of the keys
 x_centroids = [np.mean(key[:, 0, 0]).tolist() for key in keys]
 # Create a list of tuples where each tuple is (x_centroid, key)
@@ -269,8 +271,37 @@ finger_tips = {}
 finger_types = ['thumb', 'index', 'middle', 'ring', 'pinky']
 #********************************************
 
+#**********create LUT for keys**************
+_, temp_frame = cap.read()#picam.capture_array("main")
+frame_height, frame_width, c = temp_frame.shape
+
+lookup_table = -np.ones((frame_height, frame_width), dtype=int)
+
+# Assuming keys is a list of contours and each contour is a list of points
+for i, key in enumerate(keys):
+    # Create a binary mask of the contour
+    mask = np.zeros((frame_height, frame_width), dtype=np.uint8)
+    cv2.drawContours(mask, [np.array(key)], -1, (255), thickness=cv2.FILLED)
+
+    # Update the lookup table with the contour index
+    lookup_table[mask == 255] = i
+
+def find_contour(point):
+    # Look up the contour index in the lookup table
+    if 0 <= point[0] < frame_width and 0 <= point[1] < frame_height:
+            # Look up the contour index in the lookup table
+            return lookup_table[int(point[1]), int(point[0])]
+    else:
+        return -1
+    #############EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+    #############EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+#****************************************************************
+
+import time
 while True:
-    frame = picam.capture_array("main")
+    start_time = time.time()
+    # Read each frame from the webcam
+    _, frame = cap.read()#picam.capture_array("main")
 
     #-----------------BEGIN INTERNAL EDITS-----------------------
     height, width, c = frame.shape
@@ -286,11 +317,17 @@ while True:
 
     for key in keys:
         cv2.drawContours(frame, [key], -1, (0, 255, 0), 2)
+    
+    #############EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+    if use_press:
+        cv2.putText(frame, 'Both Hands', (250, 50), cv2.FONT_HERSHEY_COMPLEX, 0.9, (0, 255, 0), 2)
+        
+    #############EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
 
    # post process the result
     if result.multi_hand_landmarks:
         landmarks = []
-
+            
         for handslms in result.multi_hand_landmarks:
             for lm in handslms.landmark:
                 # print(id, lm)
@@ -299,6 +336,7 @@ while True:
 
                 landmarks.append([lmx, lmy])
 
+            
             # Get the landmarks for the tips of each finger
             finger_tips = {
                 'thumb': (int(handslms.landmark[mpHands.HandLandmark.THUMB_TIP].x * width), int(handslms.landmark[mpHands.HandLandmark.THUMB_TIP].y * height)),
@@ -312,6 +350,55 @@ while True:
             mpDraw.draw_landmarks(frame, handslms, mpHands.HAND_CONNECTIONS)
 
             #----------------------------------------------------
+            #----------------Whole hand (palm) movement------------------
+            """
+             # Get the landmark for the palm base
+            palm_base_landmark = handslms.landmark[mpHands.HandLandmark.WRIST]
+            palm_base_position = int(palm_base_landmark.y * height)  # Get the y-coordinate of the palm base
+
+            # Add the current position to the list of past positions
+            last_positions['palm_base'].append(palm_base_position)
+
+            # If we have more past positions than the size of the smoothing window, remove the oldest one
+            if len(last_positions['palm_base']) > smoothing_window_size:
+                last_positions['palm_base'].pop(0)
+
+            if len(last_positions['palm_base']) > 1:
+                palm_base_movement_rate = (last_positions['palm_base'][-1] - last_positions['palm_base'][0]) / (len(last_positions['palm_base']) - 1)
+            else:
+                palm_base_movement_rate = 0
+
+            if palm_base_movement_rate > (movement_rate_threshold/2):
+                #print("whole hand")
+                # Calculate the relative positions of the fingertips to the palm base
+                relative_positions = {finger: int(landmark.y * height) - palm_base_position for finger, landmark in finger_tips.items()}
+
+                # Find the two highest fingers
+                highest_fingers = sorted(relative_positions, key=relative_positions.get)[:2]
+
+                # Calculate the average position of the two highest fingers
+                average_highest_position = sum(relative_positions[finger] for finger in highest_fingers) / 2
+
+                # Find the lowest finger
+                lowest_finger = sorted(relative_positions, key=relative_positions.get, reverse=True)[0]
+
+                for finger, landmark in finger_tips.items():
+                    # If the finger is closer to the average highest position, it's not pressing a key
+                    if abs(relative_positions[finger] - average_highest_position) < abs(relative_positions[finger] - relative_positions[lowest_finger]):
+                        is_pressing[finger] = False
+                    else:
+                        # If the whole hand is moving downwards and the finger is over a key, start pressing key
+                        if palm_base_movement_rate > movement_rate_threshold: # and cv2.pointPolygonTest(keys[i], (int(landmark.x * width), current_position), False) >= 0:
+                            is_pressing[finger] = True
+
+                        # If the finger is currently pressing a key
+                        elif is_pressing[finger]:
+                            # If the whole hand is moving upwards, stop pressing key
+                            if palm_base_movement_rate < -movement_rate_threshold:
+                                is_pressing[finger] = False
+                        """
+            #else: #else consider fingers individually
+
 
             key_write_arr = np.array([0,0,0,0,0])
             #--------------individual finger tracking-------------
@@ -342,18 +429,32 @@ while True:
                         is_pressing[finger] = False
             #------------------------------------------------------
 
-                for i, key in enumerate(keys):
-                        for finger_index, finger_name in enumerate(finger_types):
-                            finger_inside = cv2.pointPolygonTest(key, finger_tips[finger_name], False) >= 0
-                            if finger_inside and is_pressing[finger_name]:
-                                key_write_arr[finger_index] = i+72
-            else:
-                for i, key in enumerate(keys):
-                        for finger_index, finger_name in enumerate(finger_types):
-                            finger_inside = cv2.pointPolygonTest(key, finger_tips[finger_name], False) >= 0
-                            if finger_inside:
-                                key_write_arr[finger_index] = i+72
             
+    #############EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+                for finger_index, finger_name in enumerate(finger_types):
+                    contour_index = find_contour(finger_tips[finger_name])
+                    if contour_index >= 0 and is_pressing[finger_name]:
+                        key_write_arr[finger_index] = contour_index + 72
+                # for i, key in enumerate(keys):
+                #         for finger_index, finger_name in enumerate(finger_types):
+                #             finger_inside = cv2.pointPolygonTest(key, finger_tips[finger_name], False) >= 0
+                #             if finger_inside and is_pressing[finger_name]:
+                #                 key_write_arr[finger_index] = i+72
+                
+
+            else:
+                for finger_index, finger_name in enumerate(finger_types):
+                    contour_index = find_contour(finger_tips[finger_name])
+                    if contour_index >= 0:
+                        key_write_arr[finger_index] = contour_index + 72
+                        
+    #############EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+                # for i, key in enumerate(keys):
+                #         for finger_index, finger_name in enumerate(finger_types):
+                #             finger_inside = cv2.pointPolygonTest(key, finger_tips[finger_name], False) >= 0
+                #             if finger_inside:
+                #                 key_write_arr[finger_index] = i+72
+                
             #-------------------------END EDITS-----------------------------
 
             #write_array = bytearray(key_write_arr) 
@@ -362,8 +463,8 @@ while True:
 
             key_write_string = str(key_write_arr[0]) + 'n' + str(key_write_arr[1]) + 'n' + str(key_write_arr[2]) + 'n' + str(key_write_arr[3]) + 'n' + str(key_write_arr[4]) + 'n'+ '0n0n0n0n0n' + 'A'
             print(key_write_string)
-            val = write_read(key_write_string)
-            print("Received Value: ",val)
+            #val = write_read(key_write_string)
+            #print("Received Value: ",val)
                     
 
     # Show the final output
@@ -376,6 +477,10 @@ while True:
     elif command_key == ord('t'):
         use_press = not use_press
     #---------------------------------------
+    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    #print(f"{elapsed_time}")
 
 
 cv2.destroyAllWindows()
